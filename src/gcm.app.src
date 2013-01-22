@@ -1,0 +1,6 @@
+{application, gcm, [
+    {description, "Interface to Google Cloud Messaging"},
+    {vsn, "1"},
+    {registered, []},
+    {applications, [kernel, ibrowse, jiffy]}
+]}.
