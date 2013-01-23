@@ -76,7 +76,7 @@ name_for_error("InvalidRegistration") ->
 name_for_error("MismatchSenderId") ->
     mismatch_sender_id;
 name_for_error("MessageTooBig") ->
-    message_to_big;
+    message_too_big;
 name_for_error("InvalidDataKey") ->
     invalid_data_key;
 name_for_error("InvalidTtl") ->
