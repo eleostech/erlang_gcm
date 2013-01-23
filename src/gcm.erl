@@ -2,20 +2,12 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-include("gcm.hrl").
+
 -record(gcm_message,
         {registration_ids,
          data,
          dry_run=false}).
-
--record(gcm_response,
-        {multicast_id,
-         results}).
-
--record(gcm_result,
-        {original_id,
-         canonical_id,
-         error,
-         message_id}).
 
 -export([send/2]).
 
