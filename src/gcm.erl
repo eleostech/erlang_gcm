@@ -9,30 +9,33 @@
          data,
          dry_run=false}).
 
--export([send/2]).
+-export([send/2, send/3]).
 
 send(Tokens, PropList) ->
-    Ids = lists:map(fun(Token) ->
-                            list_to_binary(Token)
-                    end, Tokens),
-    GcmMessage = #gcm_message{registration_ids=Ids,
-                              data={PropList}},
-    Data = jiffy:encode({gcm_message_to_proplist(GcmMessage)}),
-    case post_json(Data) of
-        {ok, JsonResponse} ->
-            {ok, json_to_gcm_response(JsonResponse)};
-        Other ->
-            Other
-    end.
-
-post_json(Json) ->
-    Endpoint = get_env(endpoint, "https://android.googleapis.com/gcm/send"),
     ApiKey = case get_env(api_key, undefined) of
                  Key when is_list(Key) ->
                      Key;
                  _ ->
                      throw(gcm_api_key_unspecified)
              end,
+    send(ApiKey, Tokens, PropList).
+
+send(ApiKey, Tokens, PropList) ->
+    Ids = lists:map(fun(Token) ->
+                            list_to_binary(Token)
+                    end, Tokens),
+    GcmMessage = #gcm_message{registration_ids=Ids,
+                              data={PropList}},
+    Data = jiffy:encode({gcm_message_to_proplist(GcmMessage)}),
+    case post_json(ApiKey, Data) of
+        {ok, JsonResponse} ->
+            {ok, json_to_gcm_response(JsonResponse)};
+        Other ->
+            Other
+    end.
+
+post_json(ApiKey, Json) ->
+    Endpoint = get_env(endpoint, "https://android.googleapis.com/gcm/send"),
     case ibrowse:send_req(Endpoint,
                           [{"Content-Type", "application/json"},
                            {"Authorization", lists:append("key=", ApiKey)}],
@@ -127,11 +130,11 @@ mock_env(Endpoint, Key, Fun) ->
     Fun(),
     meck:unload(application).
 
-post_json_complains_if_no_key_test() ->
+send_complains_if_no_key_test() ->
     mock_env(undefined, undefined,
              fun() ->
                      ?assertException(throw, gcm_api_key_unspecified,
-                                      post_json(""))
+                                      send([fake], []))
              end).
 
 post_json_uses_specified_endpoint_test() ->
@@ -143,7 +146,7 @@ post_json_uses_specified_endpoint_test() ->
                 end),
     mock_env("endpoint", "sesame",
              fun() ->
-                     post_json("")
+                     post_json("fake key", "")
              end),
     meck:validate(ibrowse),
     meck:unload(ibrowse).
@@ -156,10 +159,7 @@ post_json_sends_key_test() ->
                         ?assertEqual("key=sesame", AuthHeader),
                         {ok, "200", [], ""}
                 end),
-    mock_env("nowhere", "sesame",
-             fun() ->
-                     post_json("")
-             end),
+    post_json("sesame", ""),
     meck:validate(ibrowse),
     meck:unload(ibrowse).
 
