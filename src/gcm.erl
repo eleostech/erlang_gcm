@@ -62,6 +62,7 @@ json_to_gcm_response(Json) ->
     RawResults = proplists:get_value(<<"results">>, PropList),
     Results = lists:map(fun({Result}) ->
                                 #gcm_result{message_id=list_value(message_id, Result),
+                                            canonical_id=list_value(registration_id, Result),
                                             error=name_for_error(list_value(error, Result))}
                         end, RawResults),
     #gcm_response{multicast_id=proplists:get_value(<<"multicast_id">>, PropList),
@@ -194,7 +195,23 @@ send_response_test() ->
              fun() ->
                      {ok, Response} = send(["token"], []),
                      ?assertEqual(#gcm_response{multicast_id=5,
-                                                results=[#gcm_result{message_id="42"}]},
+                                                results=[#gcm_result{message_id="42", canonical_id=undefined}]},
+                                 Response)
+             end),
+    meck:validate(ibrowse),
+    meck:unload(ibrowse).
+
+canonical_id_response_test() ->
+    meck:new(ibrowse),
+    meck:expect(ibrowse, send_req,
+                fun(_, _, post, _) ->
+                        {ok, "200", [], "{\"multicast_id\":5,\"success\":1,\"failure\":0,\"canonical_ids\":1,\"results\":[{\"message_id\":\"42\",\"registration_id\":\"sigh\"}]}"}
+                end),
+    mock_env("nowhere", "sesame",
+             fun() ->
+                     {ok, Response} = send(["token"], []),
+                     ?assertEqual(#gcm_response{multicast_id=5,
+                                                results=[#gcm_result{message_id="42", canonical_id="sigh"}]},
                                  Response)
              end),
     meck:validate(ibrowse),
