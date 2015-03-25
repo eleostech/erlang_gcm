@@ -4,12 +4,14 @@
 
 -include("gcm.hrl").
 
+-define(DEFAULT_TIMEOUT, 30000).
+
 -record(gcm_message,
         {registration_ids,
          data,
          dry_run=false}).
 
--export([send/2, send/3]).
+-export([send/2, send/3, send/4]).
 
 send(Tokens, PropList) ->
     ApiKey = case get_env(api_key, undefined) of
@@ -21,18 +23,52 @@ send(Tokens, PropList) ->
     send(ApiKey, Tokens, PropList).
 
 send(ApiKey, Tokens, PropList) ->
+    send(ApiKey, Tokens, PropList, ?DEFAULT_TIMEOUT).
+
+send(ApiKey, Tokens, PropList, Timeout) ->
     Ids = lists:map(fun(Token) ->
                             list_to_binary(Token)
                     end, Tokens),
     GcmMessage = #gcm_message{registration_ids=Ids,
                               data={PropList}},
     Data = jiffy:encode({gcm_message_to_proplist(GcmMessage)}),
-    case post_json(ApiKey, Data) of
+    case post_json_with_retry(ApiKey, Data, Timeout) of
         {ok, JsonResponse} ->
             {ok, json_to_gcm_response(JsonResponse)};
         Other ->
             Other
     end.
+
+post_json_with_retry(ApiKey, Json, Timeout) ->
+    post_json_with_retry(ApiKey, Json, Timeout, 0, erlang:now()).
+
+post_json_with_retry(ApiKey, Json, Timeout, Tries, StartTime) ->
+    Result = post_json(ApiKey, Json),
+    case should_retry(Result) of
+        true ->
+            %% Convert from microseconds to milliseconds
+            Waited = timer:now_diff(erlang:now(), StartTime) / 1000.0,
+            case Waited of
+                _TooLong when Waited > Timeout ->
+                    Result;
+                _ ->
+                    timer:sleep(backoff_duration(Tries)),
+                    post_json_with_retry(ApiKey, Json, Timeout, Tries + 1, StartTime)
+            end;
+        false ->
+            Result
+    end.
+
+backoff_duration(Try) ->
+    Wait = math:pow(2, Try) * 200.0,
+    round(Wait + (random:uniform(400) - 200)).
+
+should_retry({ok, _}) -> false;
+should_retry({error, unauthorized}) -> false;
+should_retry({error, unknown, [$5|_], _}) -> true;
+should_retry({error, unknown, _, _}) -> false;
+should_retry({error, _}) -> true;
+should_retry(_Response) -> false.
 
 post_json(ApiKey, Json) ->
     Endpoint = get_env(endpoint, "https://android.googleapis.com/gcm/send"),
@@ -227,6 +263,27 @@ send_unauthorized_test() ->
              fun() ->
                      Result = send(["token"], []),
                      ?assertEqual({error, unauthorized}, Result)
+             end),
+    meck:validate(ibrowse),
+    meck:unload(ibrowse).
+
+retry_test() ->
+    meck:new(ibrowse),
+    meck:expect(ibrowse, send_req,
+                fun(_, _, post, _) ->
+                        erlang:put(send_try, 1),
+                        meck:expect(ibrowse, send_req,
+                                    fun(_, _, post, _) ->
+                                            erlang:put(send_try, 2),
+                                            {ok, "200", [], "{\"multicast_id\":5,\"success\":1,\"failure\":0,\"canonical_ids\":0,\"results\":[]}"}
+                                    end),
+                        {ok, "502", [], ""}
+                end),
+    mock_env("nowhere", "sesame",
+             fun() ->
+                     Result = send(["token"], []),
+                     ?assertEqual({ok, #gcm_response{multicast_id=5,results=[]}}, Result),
+                     ?assertEqual(2, erlang:get(send_try))
              end),
     meck:validate(ibrowse),
     meck:unload(ibrowse).
