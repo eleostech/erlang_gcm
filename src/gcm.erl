@@ -35,8 +35,10 @@ send(ApiKey, Tokens, PropList, Timeout) ->
     case post_json_with_retry(ApiKey, Data, Timeout) of
         {ok, JsonResponse} ->
             {ok, json_to_gcm_response(JsonResponse)};
-        Other ->
-            Other
+        {error, Error} ->
+            {error, Error};
+        {error, unknown, Code, Body} ->
+            {error, unknown, Code, Body}
     end.
 
 post_json_with_retry(ApiKey, Json, Timeout) ->
@@ -83,10 +85,8 @@ post_json(ApiKey, Json) ->
             {error, unauthorized};
         {ok, Code, _, Body} ->
             {error, unknown, Code, Body};
-        {error, Problem} ->
-            {error, Problem};
-        Else ->
-            {error, Else}
+        {error, Error} ->
+            {error, Error};
     end.
 
 gcm_message_to_proplist(#gcm_message{} = GcmMessage) ->
